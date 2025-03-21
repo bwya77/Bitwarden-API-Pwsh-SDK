@@ -1,5 +1,5 @@
-Function Connect-BitwardenAPI {
-<#
+Function Connect-Bitwarden {
+    <#
     .SYNOPSIS
         Connects to the Bitwarden API using client credentials authentication.
 
@@ -23,7 +23,7 @@ Function Connect-BitwardenAPI {
         The OAuth2 grant type. Defaults to 'client_credentials'.
 
     .EXAMPLE
-        Connect-BitwardenAPI -Endpoint 'https://api.bitwarden.com' -ClientID 'your_client_id' -ClientSecret 'your_client_secret' -Scope 'api'
+        Connect-Bitwarden -Endpoint 'https://api.bitwarden.com' -ClientID 'your_client_id' -ClientSecret 'your_client_secret' -Scope 'api'
 
     .NOTES
         Device type 21 represents SDK as defined in Bitwarden server's DeviceType enum.
@@ -32,6 +32,8 @@ Function Connect-BitwardenAPI {
     .OUTPUTS
         Returns the API response containing the access token and other authentication details.
 #>
+    [OutputType([PSCustomObject[]])]
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -85,11 +87,44 @@ Function Connect-BitwardenAPI {
             $response = Invoke-RestMethod @splat
         }
         Catch {
-            $_
+            $PSCmdlet.ThrowTerminatingError(
+                [System.Management.Automation.ErrorRecord]::new(
+                    [System.Net.WebException]::new("Failed to obtain access token: $($_.Exception.Message)"),
+                    'TokenRetrievalError',
+                    [System.Management.Automation.ErrorCategory]::ConnectionError,
+                    $null
+                )
+            )
         }
     }
 
     end {
-        $response
+        if ($ClientID -like "organization*") {
+            $script:BitwardenAccessToken = @{
+                AccessToken  = $response.access_token
+                Expiration   = (Get-Date).AddSeconds($response.expires_in)
+                ClientId     = $ClientId
+                ClientSecret = $ClientSecret
+                EndPoint     = $Endpoint
+                Scope        = $Scope
+            }
+            Write-Output "Successfully connected to Bitwarden API"
+        }
+        elseif ($ClientID -like "user*") {
+            $script:BitwardenAccessToken = @{
+                AccessToken  = $response.access_token
+                PrivateKey   = $response.private_key
+                Key          = $response.key
+                Expiration   = (Get-Date).AddSeconds($response.expires_in)
+                ClientId     = $ClientId
+                ClientSecret = $ClientSecret
+                EndPoint     = $Endpoint
+                Scope        = $Scope
+            }
+            Write-Output -MessageData "Successfully connected to Bitwarden API"
+        }
+        else {
+            $response
+        }
     }
 }
